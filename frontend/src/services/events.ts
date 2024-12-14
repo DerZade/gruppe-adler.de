@@ -72,11 +72,9 @@ export async function fetchEvents (): Promise<ArmaEvent[]> {
 
         const result = await response.json();
 
-        console.log('Fetched events:', result);
-
         if (result.errors) {
             console.error(result.errors);
-            throw new Error('GraphQL error occurred');
+            throw new Error('ArmaEvents GraphQL error occurred');
         }
 
         // Transform the data to fit ArmaEvent interface
