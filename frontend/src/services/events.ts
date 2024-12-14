@@ -1,5 +1,4 @@
-import { API_URI } from '.';
-import { fetchJSON } from './utils';
+import { ARMA_EVENTS_GRUPPE_ADLER_ID, ARMA_EVENTS_URL } from '.';
 
 export interface ArmaEvent {
     date: Date;
@@ -28,7 +27,72 @@ export function isInFuture (date: Date): boolean {
 }
 
 export async function fetchEvents (): Promise<ArmaEvent[]> {
-    const events = await fetchJSON<Array<Omit<ArmaEvent, 'date'> & { date: string }>>(`${API_URI}/api/v1/events`);
+    const query = `
+    query GetCommunityEventsWithDetails($communityId: UUID!) {
+        events(
+            where: {
+                community: {
+                    id: { eq: $communityId }
+                }
+            }
+            order: [
+                { date: DESC } # Sort by date in descending order
+            ]
+        ) {
+            nodes {
+                id
+                title
+                slug
+                date
+                eventUsers {
+                    nodes {
+                        status
+                    }
+                }
+            }
+        }
+    }
+    `;
 
-    return events.map(e => ({ ...e, date: new Date(e.date) }));
+    const communityId = ARMA_EVENTS_GRUPPE_ADLER_ID;
+
+    const variables = { communityId };
+    try {
+        const response = await fetch(ARMA_EVENTS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query, variables })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        console.log('Fetched events:', result);
+
+        if (result.errors) {
+            console.error(result.errors);
+            throw new Error('GraphQL error occurred');
+        }
+
+        // Transform the data to fit ArmaEvent interface
+        return result.data.events.nodes.map((event: any): ArmaEvent => {
+            const attending = event.eventUsers.nodes.filter((user: any) => user.status === 'attending').length;
+            const notSureYet = event.eventUsers.nodes.filter((user: any) => user.status === 'potentiallyAttending').length;
+
+            return {
+                date: new Date(event.date),
+                title: event.title,
+                url: `/events/${event.slug}`, // Construct URL using slug
+                attendance: [attending, notSureYet]
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching events:', error);
+        throw error;
+    }
 }
